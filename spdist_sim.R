@@ -13,7 +13,6 @@
 
 ####### FUNCTIONS
 
-
 make_bc_mask <- function(occurence, env_data) {
   # generate some background points - min 50.
   if (nrow(occurence) >= 50) {
@@ -45,7 +44,7 @@ make_bc_mask <- function(occurence, env_data) {
 }
 
 make_dat <- function(occurence, bg, env) {
-  oc_kf <- kfold(occurence, 5)
+  oc_kf <- dismo::kfold(occurence, 5)
   oc_train <- occurence[oc_kf != 1, ]
   oc_test <- occurence[oc_kf == 1, ]
   bg_kf <- dismo::kfold(bg, 5)
@@ -68,7 +67,7 @@ make_dat <- function(occurence, bg, env) {
   return(ret)
 }
 
-sdm_both <- function(occurence, mask, env, model = "glm") {
+sdm_both <- function(occurence, mask, env, model = "glm", full_kfold = FALSE) {
   # Prepare MASKED absences
     mask[mask == 1] <- NA
     if (nrow(occurence) >= 50) {
@@ -84,25 +83,25 @@ sdm_both <- function(occurence, mask, env, model = "glm") {
       bg_u <- dismo::randomPoints(env, 50)
     }
 
-  m <- stats::formula(paste("pa ~", paste(colnames(traindat_m)[-1], 
-    collapse = "+")))
   dat_m <- make_dat(occurence, bg_m, env)
   dat_u <- make_dat(occurence, bg_u, env)
+  m <- stats::formula(paste("pa ~", paste(colnames(dat_m$traindat)[-1], 
+    collapse = "+")))
 
   if (model == "glm") {
-    mod_m <- glm(formula(m), data = dat_m, 
+    mod_m <- glm(formula(m), data = dat_m$traindat, 
       family = binomial(link = "logit"))
-    mod_u <- glm(formula(m), data = dat_u, 
+    mod_u <- glm(formula(m), data = dat_u$traindat, 
       family = binomial(link = "logit"))
   } else if (model == "rf") {
-    mod_m <- suppressWarnings(randomForest::randomForest(m, data = dat_m,
-      na.action = na.omit))
-    mod_u <- suppressWarnings(randomForest::randomForest(m, data = dat_u,
-      na.action = na.omit))
+    mod_m <- suppressWarnings(randomForest::randomForest(m, 
+      data = dat_m$traindat, na.action = na.omit))
+    mod_u <- suppressWarnings(randomForest::randomForest(m, 
+      data = dat_u$traindat, na.action = na.omit))
   }
 
-  eval_m <- dismo::evaluate(test_oc, test_bg_m, mod_m)
-  eval_u <- dismo::evaluate(test_oc, test_bg_u, mod_u)
+  eval_m <- dismo::evaluate(dat_m$test_pres, dat_m$test_bg, mod_m)
+  eval_u <- dismo::evaluate(dat_u$test_pres, dat_u$test_bg, mod_u)
 
   pred_m <- predict(env, mod_m)
   pred_u <- predict(env, mod_u)
@@ -150,7 +149,7 @@ names(env) <- c("bio06", "bio08", "bio09", "bio13", "bio14", "bio15", "bio19",
   "lakes", "slope", "terrain")
 
 # check the distribution of vnil
-plot(env[[1]]);points(vnil)
+raster::plot(env[[1]]);points(vnil)
 
 # there are three obvious clumps - I think take two of those and cut out the
 # rest - this will give the "widely distributed, very patchy" situation.
@@ -167,13 +166,13 @@ vnil_e <- vnil[vnil$x > 2, ]
 vnil_e <- vnil_e[vnil_e$y > -20, ]
 vnil_test <- vnil_e
 
-plot(env[[1]])
+raster::plot(env[[1]])
 points(vnil_train, pch = 16, cex = 0.8, col = "black")
 points(vnil_test, pch = 16, cex = 0.8, col = "red")
 
 bc_mask <- make_bc_mask(vnil_train, env)
 
-plot(bc_map_thresh)
+raster::plot(bc_mask$mask)
 points(vnil_train, pch = 16, cex = 0.8, col = "black")
 points(vnil_test, pch = 16, cex = 0.8, col = "red")
 
@@ -183,10 +182,10 @@ comp_rf <- sdm_both(vnil_test, bc_mask$mask, env, model = "rf")
 
 # plot predictions...
 par(mfrow = c(1, 2))
-plot(comp_glm$masked$prediction)
-plot(comp_glm$unmasked$prediction)
+raster::plot(comp_glm$masked$prediction)
+raster::plot(comp_glm$unmasked$prediction)
 
 par(mfrow = c(1, 2))
-plot(comp_rf$masked$prediction)
-plot(comp_rf$unmasked$prediction)
+raster::plot(comp_rf$masked$prediction)
+raster::plot(comp_rf$unmasked$prediction)
 
